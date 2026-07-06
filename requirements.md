@@ -27,6 +27,11 @@ explicitly by the user for that run (a single Drive-bound folder, or a
 single OneDrive folder being migrated to a single Photos album/library
 upload) — there is no "migrate my whole OneDrive account" mode.
 
+Scope is limited to the signed-in user's **own OneDrive** content. Items
+under "Shared with me" and SharePoint-backed document libraries are out
+of scope for now; supporting them is a possible future enhancement, not
+phase 1.
+
 ## 3. Authentication & Credentials
 
 - **Microsoft Graph API** (OneDrive): OAuth 2.0 (authorization code flow
@@ -45,6 +50,13 @@ upload) — there is no "migrate my whole OneDrive account" mode.
   `.tokens/` or in the state store, see §7) and refreshed automatically;
   the user should not need to re-authenticate on every run.
 - No credential or token value is ever written to logs.
+- The Photos Library API restricts read/list access to app-created
+  content for most scopes; since this app only ever re-lists items it
+  uploaded itself (for the verification pass in §7), the
+  `photoslibrary.appendonly` + `photoslibrary.edit.appendonly` scopes are
+  expected to remain sufficient. Reconfirm this against Google's current
+  API terms at implementation time, since this policy area has shifted
+  before.
 
 ## 4. No Local Copy Requirement
 
@@ -78,6 +90,12 @@ upload) — there is no "migrate my whole OneDrive account" mode.
   configurable max attempt count. Non-retryable errors (auth failure,
   permission denied, quota exceeded) stop retrying and are recorded as
   failed.
+- **Concurrency**: transfers run with limited parallelism by default
+  (default: 3 concurrent file transfers, configurable via `.env`/CLI
+  flag) rather than fully sequential or unbounded. This default is
+  conservative enough to stay under typical Graph API and Google API
+  per-app rate limits; the backoff above further throttles automatically
+  if a 429 is hit anyway.
 - **State store**: a local manifest/database (e.g. a JSON file or SQLite
   under `.state/`) tracks, per source item: its path/ID, destination
   ID (once created), status (`pending`, `in-progress`, `done`, `failed`,
@@ -127,6 +145,12 @@ upload) — there is no "migrate my whole OneDrive account" mode.
   - Items that come back missing or mismatched are excluded from
     deletion eligibility — they're surfaced for the user to investigate
     or re-run, not silently deleted or silently left as-is.
+  - The report step offers an **interactive retry** right there for any
+    missing/mismatched items: the user can choose to have the tool
+    re-attempt just those items (re-upload, then re-verify) before
+    moving on, rather than being forced to re-run the whole migration
+    command separately. Declining the retry just leaves those items
+    excluded from the deletion prompt below.
 - **Only after** the user has seen this report does the tool prompt
   whether to delete the confirmed-migrated source items from OneDrive
   (e.g. "Delete N confirmed-migrated items from OneDrive? [y/N]"):
@@ -171,37 +195,14 @@ upload) — there is no "migrate my whole OneDrive account" mode.
   folder's photos/videos directly into the Google Photos library with
   **no album** created or assigned at all (a plain library upload). This
   is a per-run choice presented alongside the album name prompt in
-  `photos` mode, not a separate mode.
+  `photos` mode, not a separate mode. Traversal is unaffected by this
+  choice: the tool still recurses fully into every subfolder under the
+  source folder and uploads every media file found (same
+  recursive-completeness principle as Drive mode) — only the destination
+  (no album vs. one album) differs, not what gets picked up.
 - Only Google Photos-supported media types (images/videos) are uploaded
   in this mode; non-media files encountered are **skipped and logged**
   (not treated as errors, not routed anywhere else).
-
-## 9a. Open Questions / Decisions Needed
-
-Remaining points worth pinning down before/while building the affected
-behavior:
-
-1. **Verification-failure follow-up**: when the post-migration
-   verification pass (§7) finds missing/mismatched items, should the
-   tool offer to automatically retry/re-upload just those items before
-   presenting the deletion prompt, or should the user always re-run the
-   migration command separately to fix them?
-2. **Recursion scope under the no-album option** (§9): when the user
-   chooses "no album," does the tool still recurse into subfolders of
-   the chosen source folder and upload everything found (just without
-   album assignment), or does it only pick up files directly in the top
-   folder in that case?
-3. **Rate limits/throttling**: both Graph API and Google APIs impose
-   per-user/per-app rate limits and 429 responses — confirm acceptable
-   concurrency (parallel file transfers) vs. strictly sequential.
-4. **Shared/synced items**: does OneDrive "Shared with me" content, or
-   items in a SharePoint-backed library, need to be in scope, or only the
-   user's own OneDrive?
-5. **Google Photos API current terms**: the Photos Library API restricts
-   read/list access to app-created content only for most scopes —
-   uploads/album-creation/re-listing app-created items for verification
-   (§7) should be unaffected, but this is worth confirming still matches
-   current Google API terms before implementation.
 
 ## 10. Non-Functional Requirements
 
