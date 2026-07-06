@@ -31,11 +31,28 @@ currently only has planning docs (`CLAUDE.md`, `requirements.md`) and
   silent truncation on deep trees or paginated API responses (both Graph
   and Drive APIs paginate; always follow `@odata.nextLink` /
   `nextPageToken` fully).
-- **Folder → Album mapping in Photos mode**: Google Photos has no folder
-  concept; a source folder name becomes an album name (create if absent,
-  reuse if present). Don't invent Drive-style folder emulation for this
-  mode.
-- Any ambiguity in requirements.md §9 (Open Questions) should be raised
+- **Folder → Album mapping in Photos mode (phase 1)**: Google Photos has
+  no folder concept; the whole chosen source folder maps to **one** album
+  named after that top-level folder (create if absent, reuse if present).
+  Do not implement one-album-per-subfolder in phase 1 — that's an
+  explicitly deferred future enhancement. Also support a "no album"
+  variant where photos upload straight to the Photos library with no
+  album assignment (a per-run choice, not a separate mode).
+- **Migration is copy-first; deletion is a separate, later, confirmed
+  step.** Never delete or modify OneDrive source items during the
+  migration run itself. After a run completes, a distinct verification
+  pass re-checks the destination against the state store and produces a
+  report; only after the user reviews that report does the tool prompt
+  to delete confirmed-migrated source items. Deletion must never be
+  offered for — or applied to — items that weren't just freshly
+  re-verified as present at the destination.
+- **Avoid duplicate-data conflicts.** A destination naming conflict
+  should only ever arise from a mistake or an interrupted/retried run,
+  never from normal operation. Before any upload, check the destination
+  for an existing item with the same name: if size/checksum also match,
+  skip (already migrated); if they differ, don't auto-rename or upload a
+  second copy — flag it as a conflict for manual resolution instead.
+- Any ambiguity in requirements.md §9a (Open Questions) should be raised
   with the user rather than assumed silently when it affects the feature
   being built.
 
