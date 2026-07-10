@@ -34,15 +34,17 @@ phase 1.
 
 ## 3. Authentication & Credentials
 
-- **Microsoft Graph API** (OneDrive): OAuth 2.0 (authorization code flow
-  with PKCE, or device code flow for a headless terminal). Requires an
-  app registration in Azure AD/Entra ID with `Files.Read.All` (and
-  `offline_access` for refresh tokens).
-- **Google APIs**: OAuth 2.0 for a Google Cloud project with the
-  **Drive API** (`drive.file` or `drive` scope, mode `drive`) and/or the
-  **Photos Library API** (`photoslibrary.appendonly` +
-  `photoslibrary.edit.appendonly` for album creation, mode `photos`)
-  enabled.
+- **Microsoft Graph API** (OneDrive): OAuth 2.0 **Authorization Code
+  Flow with PKCE** (locked in; Device Code Flow is not used). Requires
+  an app registration in Azure AD/Entra ID with `Files.Read.All` (and
+  `offline_access` for refresh tokens). The app opens a local redirect
+  URI (e.g. `http://localhost:PORT/callback`) to complete the flow.
+- **Google APIs**: OAuth 2.0 **Authorization Code Flow** (locked in)
+  for a Google Cloud project with the **Drive API** (`drive.file` or
+  `drive` scope, mode `drive`) and/or the **Photos Library API**
+  (`photoslibrary.appendonly` + `photoslibrary.edit.appendonly` for
+  album creation, mode `photos`) enabled. Same local redirect URI
+  pattern as above.
 - Credentials (client ID/secret, tenant ID, redirect URI, refresh tokens)
   are stored in a local `.env` file, never committed to source control
   (`.env` is already git-ignored; `.env.example` documents required keys).
@@ -185,7 +187,13 @@ phase 1.
   Google Photos album, named after that top-level folder:
   - If an album with that name already exists, items are added to it
     (respecting the idempotency/conflict rule in §6, adapted for Photos:
-    matched by filename + size within the album before upload).
+    because Google Photos does not expose checksums or file-size metadata
+    for matching, duplicate detection uses **filename +
+    `mediaMetadata.creationTime`** — if both match an existing item in the
+    album or library, the upload is skipped as already migrated. If EXIF
+    data is missing and `creationTime` is unavailable, fall back to
+    **filename-only** matching. Size/checksum comparisons do not apply in
+    Photos mode).
   - If not, the album is created first, then items are uploaded into it.
   - All photos/videos found recursively under the source folder (across
     any subfolders) are uploaded into this single album — phase 1 does

@@ -49,9 +49,16 @@ currently only has planning docs (`CLAUDE.md`, `requirements.md`) and
 - **Avoid duplicate-data conflicts.** A destination naming conflict
   should only ever arise from a mistake or an interrupted/retried run,
   never from normal operation. Before any upload, check the destination
-  for an existing item with the same name: if size/checksum also match,
-  skip (already migrated); if they differ, don't auto-rename or upload a
-  second copy — flag it as a conflict for manual resolution instead.
+  for an existing item with the same name:
+  - **Drive mode**: if size/checksum also match → skip (already
+    migrated); if they differ → flag as a conflict for manual resolution.
+  - **Photos mode**: Google Photos does not expose checksums or file
+    sizes. Match by filename + `mediaMetadata.creationTime`; fall back
+    to filename-only if EXIF/`creationTime` is absent. A match → skip;
+    no match → upload. Conflicts flagged when filename matches but
+    `creationTime` differs.
+  In both modes: never auto-rename or upload a second copy — conflicts
+  are never resolved silently.
 - Any ambiguity in requirements.md §9a (Open Questions) should be raised
   with the user rather than assumed silently when it affects the feature
   being built.
@@ -60,8 +67,10 @@ currently only has planning docs (`CLAUDE.md`, `requirements.md`) and
 
 Expect/aim for a structure roughly like:
 
-- `src/auth/` — OAuth flows for Microsoft Graph and Google APIs, token
-  cache/refresh.
+- `src/auth/` — OAuth 2.0 **Authorization Code Flow** (with PKCE) for
+  both Microsoft Graph and Google APIs; token cache/refresh. This is the
+  locked-in auth method for both providers — do not implement Device Code
+  Flow or Client Credentials Flow.
 - `src/onedrive/` — Graph API client: listing, recursive traversal,
   streamed download.
 - `src/google/drive/` — Drive API client: folder create-if-missing,
@@ -71,7 +80,9 @@ Expect/aim for a structure roughly like:
 - `src/migration/` — orchestration: mode selection, recursion/traversal
   engine, conflict policy, checksum/size verification.
 - `src/state/` — resumable state store (pending/in-progress/done/failed),
-  pause/resume logic.
+  pause/resume logic. **Must use SQLite** (via `better-sqlite3` or
+  similar) — not a JSON file — to prevent data corruption on sudden
+  interruptions (power loss, SIGKILL). WAL mode is strongly recommended.
 - `src/logging/` — structured logger + terminal progress display.
 - `src/cli.ts`/`bin/` — command entrypoint and argument parsing.
 
